@@ -105,18 +105,26 @@ async function setupGroup(msg, env) {
 async function handleUser(msg, env, isEdit) {
   const from = msg.from || {};
   const adminChatId = Number(env.ADMIN_ID);
+  const banned = !!(await env.RELAY_KV.get(`ban:${from.id}`));
 
   // /命令 -> 欢迎语(编辑成命令不算,避免误触发)
   if (!isEdit && msg.text && msg.text.startsWith('/')) {
+    // 被拉黑的用户只能用 /appeal 申诉
+    if (banned && msg.text.startsWith('/appeal')) {
+      await handleAppeal(msg, env, adminChatId);
+      return;
+    }
     await tg(env, 'sendMessage', {
       chat_id: msg.chat.id,
-      text: '你好!直接发送消息即可联系管理员,支持文字、图片、视频、文件等。',
+      text: banned
+        ? '你已被管理员限制。如需申诉,请发送 /appeal 加申诉内容(例如:/appeal 我是误封,情况是...)'
+        : '你好!直接发送消息即可联系管理员,支持文字、图片、视频、文件等。',
     });
     return;
   }
 
-  // 被拉黑的访客:消息直接忽略
-  if (await env.RELAY_KV.get(`ban:${from.id}`)) return;
+  // 被拉黑的访客:普通消息直接忽略(申诉走上面)
+  if (banned) return;
 
   const groupId = await getGroupId(env);
   if (groupId) {
