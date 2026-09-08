@@ -100,6 +100,34 @@ async function setupGroup(msg, env) {
   });
 }
 
+// 被拉黑访客的申诉:转发给管理员,同一用户 1 小时限 1 次
+async function handleAppeal(msg, env, adminChatId) {
+  const from = msg.from || {};
+  const content = (msg.text || '').replace(/^\/appeal\s*/, '').trim();
+  if (!content) {
+    await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: '请带上申诉内容,例如:/appeal 我是误封,情况是...' });
+    return;
+  }
+  const now = Date.now();
+  const last = Number(await env.RELAY_KV.get(`appeal:${from.id}`)) || 0;
+  if (now - last < 3600 * 1000) {
+    await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: '申诉提交过于频繁,请 1 小时后再试。' });
+    return;
+  }
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const name = [from.first_name, from.last_name].filter(Boolean).map(esc).join(' ');
+  const who = `${name || '匿名'}${from.username ? ` (@${esc(from.username)})` : ''} <code>#u${from.id}</code>`;
+  const sent = await tg(env, 'sendMessage', {
+    chat_id: adminChatId,
+    text: `📩 收到申诉\n来自:${who}\n内容:${esc(content)}`,
+    parse_mode: 'HTML',
+  });
+  if (sent && sent.ok) {
+    await env.RELAY_KV.put(`appeal:${from.id}`, String(now));
+    await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: '申诉已提交,请等待管理员处理。' });
+  }
+}
+
 // ---------------------------------------------------------------- 访客 -> 管理员
 
 async function handleUser(msg, env, isEdit) {
